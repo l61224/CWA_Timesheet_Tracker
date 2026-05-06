@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Timesheet Tracker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f7f7f5;
+    --surface: #ffffff;
+    --surface2: #f2f1ef;
+    --border: rgba(0,0,0,0.1);
+    --border2: rgba(0,0,0,0.18);
+    --text: #1a1a18;
+    --text2: #5f5e5a;
+    --text3: #9e9d99;
+    --green: #1D9E75;
+    --green-dark: #0F6E56;
+    --red: #E24B4A;
+    --blue: #378ADD;
+    --radius: 8px;
+    --radius-lg: 12px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1a18;
+      --surface: #242422;
+      --surface2: #2e2e2c;
+      --border: rgba(255,255,255,0.1);
+      --border2: rgba(255,255,255,0.18);
+      --text: #f0ede8;
+      --text2: #a8a7a2;
+      --text3: #6b6a66;
+    }
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  .app-shell { max-width: 900px; margin: 0 auto; padding: 24px 20px 60px; }
+
+  .app-header { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; }
+  .app-logo { width: 36px; height: 36px; background: var(--green); border-radius: 10px; display: flex; align-items: center; justify-content: center; }
+  .app-logo svg { width: 20px; height: 20px; fill: #fff; }
+  .app-title { font-size: 18px; font-weight: 600; color: var(--text); }
+  .app-sub { font-size: 12px; color: var(--text3); margin-top: 1px; }
+
+  /* Tabs */
+  .tab-bar { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+  .tab { padding: 9px 16px; font-size: 13px; font-weight: 500; color: var(--text2); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; border-radius: 0; transition: color 0.15s; user-select: none; }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--green); border-bottom-color: var(--green); }
+
+  /* Timer bar */
+  .timer-bar { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .task-input { flex: 1; min-width: 160px; height: 38px; padding: 0 12px; font-size: 14px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); outline: none; transition: border-color 0.15s; }
+  .task-input:focus { border-color: var(--green); background: var(--surface); }
+  .task-input::placeholder { color: var(--text3); }
+  select.ctrl { height: 38px; padding: 0 28px 0 10px; font-size: 13px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23888' d='M5 6L0 0h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 9px center; outline: none; min-width: 130px; transition: border-color 0.15s; }
+  select.ctrl:focus { border-color: var(--green); }
+  .timer-display { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: 1px; color: var(--text); min-width: 88px; text-align: center; }
+  .timer-display.running { color: var(--green); }
+  .circle-btn { width: 38px; height: 38px; border-radius: 50%; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: transform 0.1s, background 0.15s; flex-shrink: 0; }
+  .circle-btn:active { transform: scale(0.92); }
+  .btn-start { background: var(--green); color: #fff; }
+  .btn-start:hover { background: var(--green-dark); }
+  .btn-stop { background: var(--red); color: #fff; }
+  .btn-stop:hover { background: #c03c3b; }
+  .flat-btn { height: 38px; padding: 0 14px; font-size: 13px; border: 1px solid var(--border2); border-radius: var(--radius); background: var(--surface); color: var(--text2); cursor: pointer; font-weight: 500; white-space: nowrap; transition: background 0.15s, color 0.15s; }
+  .flat-btn:hover { background: var(--surface2); color: var(--text); }
+  .flat-btn.primary { background: var(--green); color: #fff; border-color: transparent; }
+  .flat-btn.primary:hover { background: var(--green-dark); }
+  .flat-btn.danger { color: var(--red); border-color: rgba(226,75,74,0.3); }
+  .flat-btn.danger:hover { background: #fff0f0; }
+
+  /* Manual modal */
+  .manual-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px 18px; margin-bottom: 16px; display: none; }
+  .manual-panel.open { display: block; }
+  .form-row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+  .form-label { font-size: 12px; color: var(--text2); min-width: 72px; flex-shrink: 0; }
+  .form-input { flex: 1; min-width: 100px; height: 34px; padding: 0 10px; font-size: 13px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); outline: none; }
+  .form-input:focus { border-color: var(--green); background: var(--surface); }
+  .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+
+  /* Entries */
+  .entries-header { display: grid; grid-template-columns: 1fr 120px 70px 80px 80px 48px; gap: 8px; padding: 4px 14px; margin-bottom: 4px; }
+  .entries-header span { font-size: 11px; color: var(--text3); font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; }
+
+  .day-group { margin-bottom: 20px; }
+  .day-header { display: flex; justify-content: space-between; align-items: center; padding: 2px 4px 8px; }
+  .day-label { font-size: 13px; font-weight: 600; color: var(--text2); }
+  .day-total { font-size: 12px; color: var(--text3); }
+
+  .entry-row { display: grid; grid-template-columns: 1fr 120px 70px 80px 80px 48px; gap: 8px; align-items: center; padding: 11px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 5px; transition: border-color 0.12s; }
+  .entry-row:hover { border-color: var(--border2); }
+  .entry-task { font-size: 14px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .entry-proj { font-size: 11px; color: var(--text3); margin-top: 2px; display: flex; align-items: center; gap: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
+  .badge { display: inline-block; padding: 2px 7px; border-radius: 20px; font-size: 11px; font-weight: 500; }
+  .badge-Consulting    { background: #E6F1FB; color: #0C447C; }
+  .badge-Support       { background: #EAF3DE; color: #27500A; }
+  .badge-Training      { background: #FAEEDA; color: #633806; }
+  .badge-Management    { background: #EEEDFE; color: #3C3489; }
+  .badge-Development   { background: #E1F5EE; color: #085041; }
+  .badge-Pre-Sales     { background: #FBEAF0; color: #72243E; }
+  .badge-QA            { background: #F1EFE8; color: #444441; }
+  .badge-default       { background: #f0f0ee; color: #666; }
+  .entry-hrs { font-size: 14px; font-weight: 500; color: var(--text); text-align: center; }
+  .entry-nonbill { font-size: 13px; color: var(--text2); text-align: center; }
+  .del-btn { width: 28px; height: 28px; border: none; background: none; cursor: pointer; border-radius: 6px; color: var(--text3); font-size: 14px; display: flex; align-items: center; justify-content: center; margin-left: auto; transition: background 0.12s, color 0.12s; }
+  .del-btn:hover { background: #fff0f0; color: var(--red); }
+
+  .empty-state { text-align: center; padding: 48px 0; color: var(--text3); font-size: 14px; }
+  .empty-icon { font-size: 32px; margin-bottom: 10px; opacity: 0.4; }
+
+  /* Footer */
+  .footer-bar { display: flex; align-items: center; justify-content: space-between; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--border); flex-wrap: wrap; gap: 12px; }
+  .stats { display: flex; gap: 24px; }
+  .stat-item { text-align: center; }
+  .stat-num { font-size: 20px; font-weight: 600; color: var(--text); }
+  .stat-lbl { font-size: 11px; color: var(--text3); margin-top: 1px; }
+  .footer-actions { display: flex; gap: 8px; }
+
+  /* Projects tab */
+  .proj-item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 6px; }
+  .proj-dot-lg { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+  .proj-info { flex: 1; }
+  .proj-code { font-size: 13px; font-weight: 600; color: var(--text); }
+  .proj-name { font-size: 12px; color: var(--text2); margin-top: 1px; }
+  .add-proj-section { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
+  .section-title { font-size: 12px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 12px; }
+  .add-proj-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* Notification */
+  .notif { position: fixed; bottom: 24px; right: 24px; background: var(--text); color: var(--bg); padding: 10px 18px; border-radius: var(--radius); font-size: 13px; font-weight: 500; opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 999; }
+  .notif.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<div class="app-shell">
+
+  <div class="app-header">
+    <div class="app-logo">
+      <svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="#fff" stroke-width="2"/><path d="M10 5v5l3 3" stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
+    </div>
+    <div>
+      <div class="app-title">Timesheet Tracker</div>
+      <div class="app-sub">Local — 資料存於本機瀏覽器</div>
+    </div>
+  </div>
+
+  <div class="tab-bar">
+    <div class="tab active" onclick="switchTab('logs')">Time Log</div>
+    <div class="tab" onclick="switchTab('projects')">Projects</div>
+  </div>
+
+  <!-- TIME LOG VIEW -->
+  <div id="view-logs">
+
+    <!-- Timer Bar -->
+    <div class="timer-bar">
+      <input class="task-input" id="taskName" placeholder="What are you working on?" />
+      <select class="ctrl" id="timerProject"></select>
+      <select class="ctrl" id="timerCategory">
+        <option>Consulting</option><option>Support</option><option>Training</option>
+        <option>Development</option><option>Management</option><option>Pre-Sales</option><option>QA</option>
+      </select>
+      <select class="ctrl" id="timerBillable" style="min-width:110px;">
+        <option value="billable">Billable</option>
+        <option value="nonbillable">Non-billable</option>
+      </select>
+      <div class="timer-display" id="timerDisplay">00:00:00</div>
+      <button class="circle-btn btn-start" id="timerBtn" onclick="toggleTimer()" title="Start / Stop">&#9654;</button>
+      <button class="flat-btn" onclick="toggleManual()">+ Manual</button>
+    </div>
+
+    <!-- Manual Panel -->
+    <div class="manual-panel" id="manualPanel">
+      <div class="form-row">
+        <span class="form-label">Task</span>
+        <input class="form-input" id="mTask" placeholder="Task description" style="min-width:220px;" />
+      </div>
+      <div class="form-row">
+        <span class="form-label">Project</span>
+        <select class="ctrl form-input" id="mProject" style="height:34px;"></select>
+        <select class="ctrl form-input" id="mCategory" style="height:34px;min-width:120px;">
+          <option>Consulting</option><option>Support</option><option>Training</option>
+          <option>Development</option><option>Management</option><option>Pre-Sales</option><option>QA</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <span class="form-label">Date</span>
+        <input class="form-input" type="date" id="mDate" style="min-width:140px;" />
+        <span class="form-label" style="margin-left:8px;">Billable h</span>
+        <input class="form-input" type="number" id="mBill" placeholder="0" step="0.5" min="0" style="max-width:75px;" />
+        <span class="form-label">Non-bill h</span>
+        <input class="form-input" type="number" id="mNonBill" placeholder="0" step="0.5" min="0" style="max-width:75px;" />
+      </div>
+      <div class="form-row">
+        <span class="form-label">Comment</span>
+        <input class="form-input" id="mComment" placeholder="Optional comment" style="min-width:200px;" />
+      </div>
+      <div class="form-actions">
+        <button class="flat-btn" onclick="toggleManual()">Cancel</button>
+        <button class="flat-btn primary" onclick="addManualEntry()">Add entry</button>
+      </div>
+    </div>
+
+    <!-- Entries -->
+    <div id="entriesWrap"></div>
+
+    <!-- Footer -->
+    <div class="footer-bar">
+      <div class="stats">
+        <div class="stat-item"><div class="stat-num" id="sBill">0.0h</div><div class="stat-lbl">Billable</div></div>
+        <div class="stat-item"><div class="stat-num" id="sNon">0.0h</div><div class="stat-lbl">Non-billable</div></div>
+        <div class="stat-item"><div class="stat-num" id="sCount">0</div><div class="stat-lbl">Entries</div></div>
+      </div>
+      <div class="footer-actions">
+        <button class="flat-btn danger" onclick="clearAll()">Clear all</button>
+        <button class="flat-btn primary" onclick="exportExcel()">&#8595; Export Excel</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- PROJECTS VIEW -->
+  <div id="view-projects" style="display:none;">
+    <div id="projListWrap"></div>
+    <div class="add-proj-section">
+      <div class="section-title">Add project</div>
+      <div class="add-proj-row">
+        <input class="form-input" id="newCode" placeholder="Project code (e.g. C889P016)" style="min-width:180px;" />
+        <input class="form-input" id="newName" placeholder="Project full name" style="min-width:200px;flex:1;" />
+        <button class="flat-btn primary" onclick="addProject()">Add</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="notif" id="notif"></div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+const COLORS = ['#1D9E75','#378ADD','#D85A30','#D4537E','#7F77DD','#BA7517','#639922','#E24B4A','#0F6E56','#185FA5','#533AB7','#993556'];
+
+let projects = JSON.parse(localStorage.getItem('ts_projects') || 'null') || [
+  { code:'C889P016', name:'Loreal CN Offline TPM Phase 1', color:COLORS[0] },
+  { code:'C000P000', name:'CW',                            color:COLORS[1] },
+  { code:'C000P001', name:'CW - Vizier Development',       color:COLORS[2] },
+  { code:'C000P002', name:'CW - Vizier Testing',           color:COLORS[3] },
+  { code:'C000P003', name:'CW - Timesheet Development',    color:COLORS[4] },
+  { code:'C000P004', name:'CW - Infrastructure',           color:COLORS[5] },
+];
+
+let entries = JSON.parse(localStorage.getItem('ts_entries') || '[]');
+
+let timerRunning = false;
+let timerStart   = null;
+let timerTick    = null;
+let pendingEntry = null;
+
+// ── Persist ────────────────────────────────────────────────────────────────
+function save() {
+  localStorage.setItem('ts_projects', JSON.stringify(projects));
+  localStorage.setItem('ts_entries',  JSON.stringify(entries));
+}
+
+// ── Selects ────────────────────────────────────────────────────────────────
+function fillSelects() {
+  ['timerProject','mProject'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const prev = el.value;
+    el.innerHTML = projects.map(p => `<option value="${p.code}">${p.code}</option>`).join('');
+    if (prev) el.value = prev;
+  });
+}
+
+// ── Timer ──────────────────────────────────────────────────────────────────
+function toggleTimer() {
+  if (!timerRunning) {
+    timerRunning = true;
+    timerStart   = Date.now();
+    pendingEntry = {
+      task:     document.getElementById('taskName').value.trim() || '(untitled)',
+      project:  document.getElementById('timerProject').value,
+      category: document.getElementById('timerCategory').value,
+      billable: document.getElementById('timerBillable').value === 'billable',
+      date:     today(),
+      comment:  '',
+    };
+    const btn = document.getElementById('timerBtn');
+    btn.className = 'circle-btn btn-stop';
+    btn.innerHTML = '&#9632;';
+    document.getElementById('timerDisplay').classList.add('running');
+    timerTick = setInterval(tickTimer, 1000);
+  } else {
+    clearInterval(timerTick);
+    timerRunning = false;
+    const elapsedH = (Date.now() - timerStart) / 3600000;
+    const hrs = Math.max(0.5, Math.round(elapsedH * 2) / 2);
+    const e = { ...pendingEntry };
+    e.billableHrs = e.billable ? hrs : 0;
+    e.nonBillHrs  = e.billable ? 0 : hrs;
+    entries.unshift(e);
+    save();
+    pendingEntry = null;
+    const btn = document.getElementById('timerBtn');
+    btn.className = 'circle-btn btn-start';
+    btn.innerHTML = '&#9654;';
+    document.getElementById('timerDisplay').textContent = '00:00:00';
+    document.getElementById('timerDisplay').classList.remove('running');
+    document.getElementById('taskName').value = '';
+    renderEntries();
+    notify('Entry saved (' + hrs.toFixed(1) + 'h)');
+  }
+}
+
+function tickTimer() {
+  const sec = Math.floor((Date.now() - timerStart) / 1000);
+  const h = String(Math.floor(sec / 3600)).padStart(2,'0');
+  const m = String(Math.floor((sec % 3600) / 60)).padStart(2,'0');
+  const s = String(sec % 60).padStart(2,'0');
+  document.getElementById('timerDisplay').textContent = `${h}:${m}:${s}`;
+}
+
+// ── Manual entry ───────────────────────────────────────────────────────────
+function toggleManual() {
+  const p = document.getElementById('manualPanel');
+  p.classList.toggle('open');
+  if (p.classList.contains('open')) document.getElementById('mDate').value = today();
+}
+
+function addManualEntry() {
+  const task    = document.getElementById('mTask').value.trim() || '(untitled)';
+  const project = document.getElementById('mProject').value;
+  const category= document.getElementById('mCategory').value;
+  const date    = document.getElementById('mDate').value || today();
+  const bill    = parseFloat(document.getElementById('mBill').value) || 0;
+  const nonbill = parseFloat(document.getElementById('mNonBill').value) || 0;
+  const comment = document.getElementById('mComment').value.trim();
+  if (bill === 0 && nonbill === 0) { alert('Please enter at least one hour value.'); return; }
+  entries.unshift({ task, project, category, date, billableHrs: bill, nonBillHrs: nonbill, comment });
+  save();
+  document.getElementById('mTask').value = '';
+  document.getElementById('mBill').value = '';
+  document.getElementById('mNonBill').value = '';
+  document.getElementById('mComment').value = '';
+  toggleManual();
+  renderEntries();
+  notify('Manual entry added');
+}
+
+// ── Delete ─────────────────────────────────────────────────────────────────
+function deleteEntry(i) {
+  entries.splice(i, 1);
+  save();
+  renderEntries();
+}
+
+// ── Clear ──────────────────────────────────────────────────────────────────
+function clearAll() {
+  if (!entries.length) return;
+  if (confirm('Clear ALL entries? This cannot be undone.')) {
+    entries = [];
+    save();
+    renderEntries();
+  }
+}
+
+// ── Render entries ─────────────────────────────────────────────────────────
+function renderEntries() {
+  const wrap = document.getElementById('entriesWrap');
+  if (!entries.length) {
+    wrap.innerHTML = '<div class="empty-state"><div class="empty-icon">⏱</div>No entries yet.<br>Start the timer or add a manual entry.</div>';
+    updateStats();
+    return;
+  }
+  const groups = {};
+  entries.forEach((e,i) => { (groups[e.date] = groups[e.date]||[]).push({...e, _i:i}); });
+  const dates = Object.keys(groups).sort((a,b) => b.localeCompare(a));
+
+  wrap.innerHTML =
+    `<div class="entries-header">
+      <span>Task / Project</span><span>Category</span><span>Date</span>
+      <span style="text-align:center;">Billable h</span>
+      <span style="text-align:center;">Non-bill h</span>
+      <span></span>
+    </div>` +
+    dates.map(date => {
+      const list = groups[date];
+      const dBill = list.reduce((s,e)=>s+e.billableHrs,0);
+      const dNon  = list.reduce((s,e)=>s+e.nonBillHrs,0);
+      return `<div class="day-group">
+        <div class="day-header">
+          <span class="day-label">${fmtDate(date)}</span>
+          <span class="day-total">${dBill.toFixed(1)}h billable${dNon>0?' · '+dNon.toFixed(1)+'h non-bill':''}</span>
+        </div>
+        ${list.map(e => {
+          const p = projects.find(pp=>pp.code===e.project);
+          const dotHtml = p ? `<span class="dot" style="background:${p.color}"></span>` : '';
+          const cat = e.category || 'default';
+          const badgeCls = 'badge badge-' + (cat.replace(/[^a-zA-Z\-]/g,'') || 'default');
+          return `<div class="entry-row">
+            <div>
+              <div class="entry-task" title="${esc(e.task)}">${esc(e.task)}</div>
+              <div class="entry-proj">${dotHtml}${esc(e.project)}${e.comment?' · <em style="color:var(--text3)">'+esc(e.comment)+'</em>':''}</div>
+            </div>
+            <div><span class="${badgeCls}">${esc(cat)}</span></div>
+            <div style="font-size:12px;color:var(--text2);">${e.date}</div>
+            <div class="entry-hrs">${e.billableHrs>0?e.billableHrs.toFixed(1):'—'}</div>
+            <div class="entry-nonbill">${e.nonBillHrs>0?e.nonBillHrs.toFixed(1):'—'}</div>
+            <div><button class="del-btn" onclick="deleteEntry(${e._i})" title="Delete">✕</button></div>
+          </div>`;
+        }).join('')}
+      </div>`;
+    }).join('');
+
+  updateStats();
+}
+
+function updateStats() {
+  const bill  = entries.reduce((s,e)=>s+e.billableHrs,0);
+  const non   = entries.reduce((s,e)=>s+e.nonBillHrs,0);
+  document.getElementById('sBill').textContent  = bill.toFixed(1)+'h';
+  document.getElementById('sNon').textContent   = non.toFixed(1)+'h';
+  document.getElementById('sCount').textContent = entries.length;
+}
+
+// ── Projects tab ───────────────────────────────────────────────────────────
+function renderProjList() {
+  const wrap = document.getElementById('projListWrap');
+  wrap.innerHTML = projects.length ? projects.map((p,i) =>
+    `<div class="proj-item">
+      <div class="proj-dot-lg" style="background:${p.color}"></div>
+      <div class="proj-info"><div class="proj-code">${esc(p.code)}</div><div class="proj-name">${esc(p.name)}</div></div>
+      <button class="flat-btn danger" onclick="removeProject(${i})">Remove</button>
+    </div>`
+  ).join('') : '<div class="empty-state"><div class="empty-icon">📁</div>No projects yet.</div>';
+}
+
+function addProject() {
+  const code = document.getElementById('newCode').value.trim();
+  const name = document.getElementById('newName').value.trim();
+  if (!code || !name) { alert('Please enter both code and name.'); return; }
+  if (projects.find(p=>p.code===code)) { alert('Project code already exists.'); return; }
+  projects.push({ code, name, color: COLORS[projects.length % COLORS.length] });
+  document.getElementById('newCode').value = '';
+  document.getElementById('newName').value = '';
+  save();
+  fillSelects();
+  renderProjList();
+  notify('Project added');
+}
+
+function removeProject(i) {
+  if (!confirm(`Remove project "${projects[i].code}"?`)) return;
+  projects.splice(i, 1);
+  save();
+  fillSelects();
+  renderProjList();
+}
+
+// ── Tabs ───────────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',(i===0&&tab==='logs')||(i===1&&tab==='projects')));
+  document.getElementById('view-logs').style.display     = tab==='logs'     ? 'block':'none';
+  document.getElementById('view-projects').style.display = tab==='projects' ? 'block':'none';
+  if (tab==='projects') renderProjList();
+}
+
+// ── Export ─────────────────────────────────────────────────────────────────
+function exportExcel() {
+  if (!entries.length) { alert('No entries to export.'); return; }
+  const rows = [['Project','Date','Line Item','Category','Project Task','Comment','Billable Hours','Non Billable Hours']];
+  const sorted = [...entries].sort((a,b)=>a.date.localeCompare(b.date));
+  const byDate = {};
+  sorted.forEach(e=>{ (byDate[e.date]=byDate[e.date]||[]).push(e); });
+
+  Object.keys(byDate).sort().forEach(date => {
+    byDate[date].forEach((e,i) => {
+      const p = projects.find(pp=>pp.code===e.project);
+      const projLabel = p ? `${e.project} ${p.name}` : e.project;
+      const lineItem  = String(i+1).padStart(4,'0');
+      const excelDate = Math.round(new Date(date+'T00:00:00').getTime()/86400000 + 25569);
+      rows.push([projLabel, excelDate, lineItem, e.category, '', e.comment||e.task, e.billableHrs, e.nonBillHrs]);
+    });
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{wch:45},{wch:12},{wch:10},{wch:14},{wch:16},{wch:35},{wch:15},{wch:18}];
+
+  // Format date column as date
+  const dateStyle = { numFmt: 'yyyy/mm/dd' };
+  for (let r=1; r<rows.length; r++) {
+    const addr = XLSX.utils.encode_cell({r, c:1});
+    if (ws[addr]) ws[addr].z = 'yyyy/mm/dd';
+  }
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Timesheet');
+  const stamp = new Date().toLocaleDateString('en-US',{year:'numeric',month:'short'}).replace(' ','_');
+  XLSX.writeFile(wb, `Timesheet_${stamp}.xlsx`);
+  notify('Excel exported!');
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function today() { return new Date().toISOString().slice(0,10); }
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function fmtDate(d) {
+  try {
+    return new Date(d+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'});
+  } catch(e) { return d; }
+}
+let notifTimer = null;
+function notify(msg) {
+  const el = document.getElementById('notif');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(notifTimer);
+  notifTimer = setTimeout(()=>el.classList.remove('show'), 2200);
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+fillSelects();
+renderEntries();
+document.getElementById('mDate').value = today();
+</script>
+</body>
+</html>
